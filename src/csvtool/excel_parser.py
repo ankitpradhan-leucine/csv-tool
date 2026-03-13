@@ -1,7 +1,6 @@
 """Excel workbook parser for test scenarios and credentials."""
 
 from pathlib import Path
-from typing import Optional
 
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
