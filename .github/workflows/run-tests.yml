@@ -1,0 +1,68 @@
+name: Run CSV Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      application_url:
+        description: 'Application URL to test'
+        required: true
+        type: string
+
+      workbook:
+        description: 'Test workbook file'
+        required: true
+        type: choice
+        options:
+          - scenarios/workbook-1.xlsx
+          - scenarios/workbook-2.xlsx
+          - scenarios/workbook-3.xlsx
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  run-csv-tests:
+    runs-on: self-hosted
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          playwright install chromium
+          playwright install-deps chromium
+
+      - name: Run CSV Tests
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          csvtool run \
+            --url "${{ inputs.application_url }}" \
+            --workbook "${{ inputs.workbook }}" \
+            --output output
+
+      - name: Upload Evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: csv-evidence-${{ github.run_number }}
+          path: output/*.docx
+          retention-days: 90
+
+      - name: Upload Screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: csv-screenshots-${{ github.run_number }}
+          path: output/screenshots/
+          retention-days: 30
