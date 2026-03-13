@@ -104,3 +104,16 @@ class TestBrowser:
             await browser.navigate("https://example.com")
             url = browser.get_current_url()
             assert "example.com" in url
+
+    @pytest.mark.asyncio
+    async def test_wait_for_selector(self, browser_config: BrowserConfig):
+        """Test waiting for an element to appear."""
+        async with Browser(browser_config) as browser:
+            await browser.navigate("https://example.com")
+            # Example.com has an h1 element
+            result = await browser.wait_for_selector("h1")
+            assert result is True
+
+            # Non-existent selector should return False
+            result = await browser.wait_for_selector("nonexistent", timeout=1000)
+            assert result is False
