@@ -1,12 +1,17 @@
 """Playwright browser automation wrapper."""
 
-import asyncio
+import base64
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from playwright.async_api import async_playwright, Browser as PWBrowser, Page
-from pydantic import BaseModel, Field
+from playwright.async_api import (
+    TimeoutError as PlaywrightTimeoutError,
+    async_playwright,
+    Browser as PWBrowser,
+    Page,
+)
+from pydantic import BaseModel
 
 
 class BrowserConfig(BaseModel):
@@ -82,7 +87,6 @@ class Browser:
 
     async def get_screenshot_base64(self) -> str:
         """Get screenshot as base64 string for AI analysis."""
-        import base64
         screenshot_bytes = await self.page.screenshot(full_page=True)
         return base64.b64encode(screenshot_bytes).decode("utf-8")
 
@@ -103,7 +107,7 @@ class Browser:
                 timeout=timeout or self.config.timeout
             )
             return True
-        except Exception:
+        except PlaywrightTimeoutError:
             return False
 
     def get_current_url(self) -> str:

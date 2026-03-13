@@ -117,3 +117,31 @@ class TestBrowser:
             # Non-existent selector should return False
             result = await browser.wait_for_selector("nonexistent", timeout=1000)
             assert result is False
+
+    @pytest.mark.asyncio
+    async def test_get_screenshot_base64(self, browser_config: BrowserConfig):
+        """Test getting screenshot as base64 string."""
+        async with Browser(browser_config) as browser:
+            await browser.navigate("https://example.com")
+            base64_str = await browser.get_screenshot_base64()
+
+            assert isinstance(base64_str, str)
+            assert len(base64_str) > 0
+            # Verify it's valid base64
+            import base64
+            decoded = base64.b64decode(base64_str)
+            assert len(decoded) > 0
+
+    @pytest.mark.asyncio
+    async def test_clear_session(self, browser_config: BrowserConfig):
+        """Test clearing browser session."""
+        async with Browser(browser_config) as browser:
+            await browser.navigate("https://example.com")
+            # This should not raise an exception
+            await browser.clear_session()
+
+    def test_page_property_without_initialization(self):
+        """Test that page property raises error when browser not initialized."""
+        browser = Browser()
+        with pytest.raises(RuntimeError, match="Browser not initialized"):
+            _ = browser.page
