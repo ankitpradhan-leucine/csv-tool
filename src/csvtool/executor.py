@@ -1,0 +1,277 @@
+"""Test execution orchestrator."""
+
+import asyncio
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+from csvtool.ai_navigator import AINavigator, ActionType
+from csvtool.browser import Browser, BrowserConfig
+from csvtool.cache import NavigationCache
+from csvtool.excel_parser import ExcelParser, WorkbookData
+from csvtool.models import (
+    Credential, ExecutionSummary, StepResult,
+    TestResult, TestScenario, TestStep
+)
+
+
+class ExecutorConfig(BaseModel):
+    """Configuration for test executor."""
+
+    url: str
+    workbook_path: Path
+    output_dir: Path = Path("output")
+    cache_dir: Path = Path("cache")
+    headless: bool = True
+    stop_on_failure: bool = True
+    api_key: Optional[str] = None
+
+
+class ExecutionError(Exception):
+    """Error during test execution."""
+    pass
+
+
+class Executor:
+    """Orchestrates test scenario execution."""
+
+    def __init__(self, config: ExecutorConfig):
+        """Initialize executor with configuration."""
+        self.config = config
+
+        # Parse workbook
+        parser = ExcelParser(config.workbook_path)
+        self._workbook_data = parser.parse()
+
+        # Initialize components (lazy)
+        self._browser: Optional[Browser] = None
+        self._navigator: Optional[AINavigator] = None
+        self._cache = NavigationCache(
+            cache_dir=config.cache_dir,
+            product_url=config.url
+        )
+
+        # Execution state
+        self._current_screenshots: list[Path] = []
+        self._step_results: list[StepResult] = []
+
+    async def run(self) -> ExecutionSummary:
+        """Run all test scenarios and return summary."""
+        browser_config = BrowserConfig(
+            headless=self.config.headless,
+            screenshot_dir=self.config.output_dir / "screenshots"
+        )
+
+        self._navigator = AINavigator(api_key=self.config.api_key)
+
+        test_results: list[TestResult] = []
+
+        async with Browser(browser_config) as browser:
+            self._browser = browser
+
+            for scenario in self._workbook_data.scenarios:
+                try:
+                    result = await self._execute_scenario(scenario)
+                    test_results.append(result)
+
+                    if not result.passed and self.config.stop_on_failure:
+                        break
+
+                except Exception as e:
+                    # Create failed result
+                    result = TestResult(
+                        test_id=scenario.test_id,
+                        title=scenario.title,
+                        role=scenario.role,
+                        passed=False,
+                        expected_result=scenario.expected_result,
+                        observed_result="Execution error",
+                        step_results=self._step_results.copy(),
+                        error=str(e)
+                    )
+                    test_results.append(result)
+
+                    if self.config.stop_on_failure:
+                        break
+
+        # Save cache after run
+        self._cache.save()
+
+        # Build summary
+        passed = sum(1 for r in test_results if r.passed)
+        return ExecutionSummary(
+            url=self.config.url,
+            workbook_name=self._workbook_data.workbook_name,
+            execution_date=datetime.now(),
+            total_tests=len(test_results),
+            passed_tests=passed,
+            failed_tests=len(test_results) - passed,
+            test_results=test_results
+        )
+
+    async def _execute_scenario(self, scenario: TestScenario) -> TestResult:
+        """Execute a single test scenario."""
+        self._step_results = []
+
+        # Get credentials for role
+        credential = self._workbook_data.get_credential(scenario.role)
+
+        # Navigate to URL and login
+        await self._browser.navigate(self.config.url)
+        await self._take_screenshot(f"{scenario.test_id}_initial")
+
+        await self._login(credential)
+        await self._take_screenshot(f"{scenario.test_id}_logged_in")
+
+        # Execute each step
+        for step in scenario.steps:
+            step_result = await self._execute_step(step, scenario.test_id)
+            self._step_results.append(step_result)
+
+            if not step_result.success:
+                return TestResult(
+                    test_id=scenario.test_id,
+                    title=scenario.title,
+                    role=scenario.role,
+                    passed=False,
+                    expected_result=scenario.expected_result,
+                    observed_result=step_result.error or "Step failed",
+                    step_results=self._step_results,
+                    error=step_result.error
+                )
+
+        # Verify expected result
+        screenshot_b64 = await self._browser.get_screenshot_base64()
+        verification = await self._navigator.verify_result(
+            screenshot_base64=screenshot_b64,
+            expected_result=scenario.expected_result
+        )
+
+        await self._take_screenshot(f"{scenario.test_id}_final")
+
+        # Clear session for next test
+        await self._browser.clear_session()
+
+        return TestResult(
+            test_id=scenario.test_id,
+            title=scenario.title,
+            role=scenario.role,
+            passed=verification.get("passed", False),
+            expected_result=scenario.expected_result,
+            observed_result=verification.get("observed_result", ""),
+            step_results=self._step_results,
+            error=None if verification.get("passed") else verification.get("reasoning")
+        )
+
+    async def _login(self, credential: Credential) -> None:
+        """Perform login with given credentials."""
+        screenshot_b64 = await self._browser.get_screenshot_base64()
+
+        login_info = await self._navigator.identify_login_form(screenshot_b64)
+
+        if not login_info.get("is_login_page"):
+            # Not a login page, might already be logged in
+            return
+
+        # Enter credentials
+        await self._browser.type_text(
+            login_info["username_selector"],
+            credential.username
+        )
+        await self._browser.type_text(
+            login_info["password_selector"],
+            credential.password
+        )
+
+        # Submit
+        await self._browser.click(login_info["submit_selector"])
+
+        # Wait for navigation
+        await asyncio.sleep(2)
+
+    async def _execute_step(
+        self,
+        step: TestStep,
+        test_id: str = ""
+    ) -> StepResult:
+        """Execute a single test step."""
+        screenshot_name = f"{test_id}_step_{step.number}"
+
+        try:
+            # Check cache first
+            cached = self._cache.get(step.instruction)
+
+            if cached:
+                # Use cached selector
+                await self._perform_action(cached.action, cached.selector)
+                self._cache.set(step.instruction, cached.selector, cached.action)
+            else:
+                # Fall back to AI
+                screenshot_b64 = await self._browser.get_screenshot_base64()
+                action = await self._navigator.analyze(
+                    screenshot_base64=screenshot_b64,
+                    instruction=step.instruction
+                )
+
+                await self._perform_action(
+                    action.action_type.value,
+                    action.selector,
+                    action.text
+                )
+
+                # Cache the learned selector
+                if action.selector:
+                    self._cache.set(
+                        step.instruction,
+                        action.selector,
+                        action.action_type.value
+                    )
+
+            # Take screenshot after step
+            screenshot_path = await self._take_screenshot(screenshot_name)
+
+            return StepResult(
+                step_number=step.number,
+                instruction=step.instruction,
+                screenshot_path=screenshot_path,
+                timestamp=datetime.now(),
+                success=True
+            )
+
+        except Exception as e:
+            # Take error screenshot
+            screenshot_path = await self._take_screenshot(f"{screenshot_name}_error")
+
+            return StepResult(
+                step_number=step.number,
+                instruction=step.instruction,
+                screenshot_path=screenshot_path,
+                timestamp=datetime.now(),
+                success=False,
+                error=str(e)
+            )
+
+    async def _perform_action(
+        self,
+        action_type: str,
+        selector: Optional[str] = None,
+        text: Optional[str] = None
+    ) -> None:
+        """Perform a browser action."""
+        if action_type == "click" and selector:
+            await self._browser.click(selector)
+        elif action_type == "type" and selector and text:
+            await self._browser.type_text(selector, text)
+        elif action_type == "navigate" and text:
+            await self._browser.navigate(text)
+        elif action_type == "wait":
+            await asyncio.sleep(2)
+        # verify actions are handled separately
+
+    async def _take_screenshot(self, name: str) -> Path:
+        """Take a screenshot and track it."""
+        path = await self._browser.screenshot(name)
+        self._current_screenshots.append(path)
+        return path
