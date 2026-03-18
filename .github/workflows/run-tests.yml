@@ -13,16 +13,14 @@ on:
         required: true
         type: choice
         options:
-          - scenarios/workbook-1.xlsx
-          - scenarios/workbook-2.xlsx
-          - scenarios/workbook-3.xlsx
+          - scenarios/sample-test.xlsx
 
 env:
   PYTHON_VERSION: '3.11'
 
 jobs:
   run-csv-tests:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 120
 
     steps:
@@ -45,11 +43,18 @@ jobs:
       - name: Run CSV Tests
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DISPLAY: :99
         run: |
+          # Start Xvfb for desktop screenshot support
+          Xvfb :99 -screen 0 1920x1080x24 &
+          sleep 2
+
           csvtool run \
             --url "${{ inputs.application_url }}" \
             --workbook "${{ inputs.workbook }}" \
-            --output output
+            --output output \
+            --headless \
+            --continue-on-failure
 
       - name: Upload Evidence
         uses: actions/upload-artifact@v4
