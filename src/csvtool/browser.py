@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import mss
 from playwright.async_api import (
     TimeoutError as PlaywrightTimeoutError,
     async_playwright,
@@ -40,8 +41,19 @@ class Browser:
     async def __aenter__(self) -> "Browser":
         """Async context manager entry - launch browser."""
         self._playwright = await async_playwright().start()
+
+        # Launch args for windowed mode (not maximized) for CSV compliance
+        # This ensures system taskbar with date/time is visible in screenshots
+        launch_args = []
+        if not self.config.headless:
+            launch_args.extend([
+                "--window-size=1366,768",  # Windowed size (not full screen)
+                "--window-position=50,50"  # Position on screen to show taskbar
+            ])
+
         self._browser = await self._playwright.chromium.launch(
-            headless=self.config.headless
+            headless=self.config.headless,
+            args=launch_args
         )
         self._page = await self._browser.new_page(
             viewport={
@@ -73,12 +85,24 @@ class Browser:
         await self.page.goto(url, wait_until="networkidle")
 
     async def screenshot(self, name: str) -> Path:
-        """Take a full-page screenshot and return path."""
+        """Take a screenshot (desktop if available, browser otherwise)."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{name}_{timestamp}.png"
         path = self.config.screenshot_dir / filename
 
-        await self.page.screenshot(path=str(path), full_page=True)
+        # Try desktop capture first (for CSV compliance - shows system date/time)
+        # Fall back to browser screenshot if desktop capture fails (e.g., in WSL)
+        try:
+            with mss.mss() as sct:
+                # Capture the primary monitor
+                monitor = sct.monitors[1]  # 0 is all monitors, 1 is primary
+                screenshot = sct.grab(monitor)
+                # Save to file
+                mss.tools.to_png(screenshot.rgb, screenshot.size, output=str(path))
+        except Exception:
+            # Fall back to browser screenshot if desktop capture fails
+            await self.page.screenshot(path=str(path), full_page=True)
+
         return path
 
     async def get_page_content(self) -> str:

@@ -157,40 +157,23 @@ class EvidenceGenerator:
         doc.add_paragraph("─" * 50)  # Separator
         doc.add_paragraph()
 
-    def _add_step_result(self, doc: Document, step: StepResult) -> None:
+    def _add_step_result(self, doc: Document, step_result: StepResult) -> None:
         """Add a single step result with screenshot."""
-        # Step header
-        status_icon = "✓" if step.success else "✗"
-        para = doc.add_paragraph()
-        para.add_run(f"Step {step.number}: ").bold = True
-        para.add_run(step.instruction)
-        para.add_run(f" {status_icon}")
-
-        # Timestamp
-        time_para = doc.add_paragraph()
-        time_para.add_run("Timestamp: ").italic = True
-        time_para.add_run(step.timestamp.strftime("%H:%M:%S"))
-
-        # Screenshot
-        if step.screenshot_path and step.screenshot_path.exists():
+        # Just add screenshot directly - no text, no timestamp
+        if step_result.screenshot_path and step_result.screenshot_path.exists():
             try:
                 doc.add_picture(
-                    str(step.screenshot_path),
+                    str(step_result.screenshot_path),
                     width=Inches(6)
                 )
                 # Center the image
                 last_paragraph = doc.paragraphs[-1]
                 last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                # Add spacing after screenshot
+                doc.add_paragraph()
             except Exception as e:
+                # Only show error if screenshot failed
                 doc.add_paragraph(f"[Screenshot unavailable: {e}]")
-
-        # Error message if failed
-        if not step.success and step.error:
-            error_para = doc.add_paragraph()
-            error_para.add_run("Error: ").bold = True
-            error_para.add_run(step.error)
-
-        doc.add_paragraph()
 
     def _generate_filename(self, summary: ExecutionSummary) -> str:
         """Generate filename for evidence document."""

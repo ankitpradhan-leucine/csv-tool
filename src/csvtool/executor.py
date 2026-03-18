@@ -118,12 +118,23 @@ class Executor:
         # Get credentials for role
         credential = self._workbook_data.get_credential(scenario.role)
 
-        # Navigate to URL and login
+        # Navigate to URL and capture login page (before entering credentials)
         await self._browser.navigate(self.config.url)
-        await self._take_screenshot(f"{scenario.test_id}_initial")
 
+        # Capture login page - this is what the user requested to see
+        initial_screenshot = await self._take_screenshot(f"{scenario.test_id}_login_page")
+        self._step_results.append(StepResult(
+            step_number=0,
+            instruction=f"Login Page: {self.config.url} (before entering credentials as {credential.role})",
+            screenshot_path=initial_screenshot,
+            timestamp=datetime.now(),
+            success=True
+        ))
+
+        # Perform login
         await self._login(credential)
-        await self._take_screenshot(f"{scenario.test_id}_logged_in")
+
+        # No need for separate post-login screenshot - the first test step will show that
 
         # Execute each step
         for step in scenario.steps:

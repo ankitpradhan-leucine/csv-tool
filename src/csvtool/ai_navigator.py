@@ -51,9 +51,18 @@ class AINavigator:
         """Analyze screenshot and determine next action for instruction."""
         system_prompt = """You are a browser automation assistant. Analyze the screenshot and determine the exact action needed to fulfill the instruction.
 
+IMPORTANT: For selectors, use ONLY these valid Playwright selector formats:
+1. Standard CSS selectors: "button.login", "#username", "input[type='password']"
+2. Text selectors: "text=Log In", "text=Submit" (for elements containing exact text)
+3. Attribute selectors: "[data-testid='login-button']", "[name='email']"
+4. Combination: "button >> text=Log In" (button containing text)
+
+DO NOT use jQuery selectors like ":contains()" - they are INVALID.
+PREFER text selectors when identifying buttons by their label.
+
 Return a JSON object with:
 - action_type: "click", "type", "verify", "wait", or "navigate"
-- selector: CSS selector for the element (for click/type actions)
+- selector: Valid Playwright selector (for click/type actions)
 - text: text to type (for type actions)
 - expected_text: text to verify (for verify actions)
 - description: brief description of the action
@@ -86,11 +95,22 @@ Return ONLY valid JSON, no markdown or explanation."""
 
         # Parse JSON response
         try:
-            # Handle potential markdown code blocks
-            if response_text.startswith("```"):
+            # Handle potential markdown code blocks and explanatory text
+            if "```json" in response_text:
+                # Extract JSON from code block
+                start = response_text.find("```json") + 7
+                end = response_text.find("```", start)
+                response_text = response_text[start:end].strip()
+            elif "```" in response_text:
+                # Generic code block
                 response_text = response_text.split("```")[1]
                 if response_text.startswith("json"):
                     response_text = response_text[4:]
+            elif "{" in response_text:
+                # Find the first { and assume JSON starts there
+                response_text = response_text[response_text.find("{"):]
+                # Find the last } and cut there
+                response_text = response_text[:response_text.rfind("}") + 1]
 
             data = json.loads(response_text)
             return NavigationAction(
@@ -143,10 +163,18 @@ Return ONLY valid JSON, no markdown or explanation."""
         response_text = response.content[0].text.strip()
 
         try:
-            if response_text.startswith("```"):
+            # Handle potential markdown code blocks and explanatory text
+            if "```json" in response_text:
+                start = response_text.find("```json") + 7
+                end = response_text.find("```", start)
+                response_text = response_text[start:end].strip()
+            elif "```" in response_text:
                 response_text = response_text.split("```")[1]
                 if response_text.startswith("json"):
                     response_text = response_text[4:]
+            elif "{" in response_text:
+                response_text = response_text[response_text.find("{"):]
+                response_text = response_text[:response_text.rfind("}") + 1]
 
             return json.loads(response_text)
         except json.JSONDecodeError as e:
@@ -167,8 +195,13 @@ Return ONLY valid JSON, no markdown or explanation."""
 
 {skip_instruction}
 
+IMPORTANT: Use ONLY valid Playwright selectors:
+- Standard CSS: "input[name='email']", "#username", ".form-control"
+- Attribute selectors: "[placeholder='Email']", "[type='text']"
+- NO jQuery selectors like ":contains()" - they are INVALID
+
 Return a JSON object with:
-- fields: array of objects with "selector" (CSS selector) and "value" (data to enter)
+- fields: array of objects with "selector" (valid Playwright selector) and "value" (data to enter)
 
 Generate realistic dummy data appropriate for each field type (names, emails, dates, numbers, etc.).
 Return ONLY valid JSON, no markdown or explanation."""
@@ -198,10 +231,18 @@ Return ONLY valid JSON, no markdown or explanation."""
         response_text = response.content[0].text.strip()
 
         try:
-            if response_text.startswith("```"):
+            # Handle potential markdown code blocks and explanatory text
+            if "```json" in response_text:
+                start = response_text.find("```json") + 7
+                end = response_text.find("```", start)
+                response_text = response_text[start:end].strip()
+            elif "```" in response_text:
                 response_text = response_text.split("```")[1]
                 if response_text.startswith("json"):
                     response_text = response_text[4:]
+            elif "{" in response_text:
+                response_text = response_text[response_text.find("{"):]
+                response_text = response_text[:response_text.rfind("}") + 1]
 
             return json.loads(response_text)
         except json.JSONDecodeError as e:
@@ -211,10 +252,16 @@ Return ONLY valid JSON, no markdown or explanation."""
         """Identify login form fields on the page."""
         system_prompt = """You are a login form analyzer. Identify the username/email and password fields on the login page.
 
+IMPORTANT: Use ONLY valid Playwright selectors:
+- Standard CSS: "input[type='email']", "#password", "button[type='submit']"
+- Text selectors for buttons: "text=Log In", "text=Sign In", "text=Submit"
+- Attribute selectors: "[name='username']", "[placeholder='Password']"
+- NO jQuery selectors like ":contains()" - they are INVALID
+
 Return a JSON object with:
-- username_selector: CSS selector for username/email field
-- password_selector: CSS selector for password field
-- submit_selector: CSS selector for login/submit button
+- username_selector: Valid Playwright selector for username/email field
+- password_selector: Valid Playwright selector for password field
+- submit_selector: Valid Playwright selector for login/submit button
 - is_login_page: true/false
 
 Return ONLY valid JSON, no markdown or explanation."""
@@ -244,10 +291,18 @@ Return ONLY valid JSON, no markdown or explanation."""
         response_text = response.content[0].text.strip()
 
         try:
-            if response_text.startswith("```"):
+            # Handle potential markdown code blocks and explanatory text
+            if "```json" in response_text:
+                start = response_text.find("```json") + 7
+                end = response_text.find("```", start)
+                response_text = response_text[start:end].strip()
+            elif "```" in response_text:
                 response_text = response_text.split("```")[1]
                 if response_text.startswith("json"):
                     response_text = response_text[4:]
+            elif "{" in response_text:
+                response_text = response_text[response_text.find("{"):]
+                response_text = response_text[:response_text.rfind("}") + 1]
 
             return json.loads(response_text)
         except json.JSONDecodeError as e:
