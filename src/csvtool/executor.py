@@ -14,6 +14,7 @@ from csvtool.ai_navigator import AINavigator, ActionType
 from csvtool.browser import Browser, BrowserConfig
 from csvtool.cache import NavigationCache
 from csvtool.excel_parser import ExcelParser, WorkbookData
+from csvtool.hybrid_navigator import HybridNavigator
 from csvtool.models import (
     Credential, ExecutionSummary, StepResult,
     TestResult, TestScenario, TestStep
@@ -30,6 +31,9 @@ class ExecutorConfig(BaseModel):
     headless: bool = True
     stop_on_failure: bool = True
     api_key: Optional[str] = None
+    use_hybrid_llm: bool = True
+    ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "llava:13b"
 
 
 class ExecutionError(Exception):
@@ -67,7 +71,15 @@ class Executor:
             screenshot_dir=self.config.output_dir / "screenshots"
         )
 
-        self._navigator = AINavigator(api_key=self.config.api_key)
+        # Initialize navigator (hybrid or Claude-only)
+        if self.config.use_hybrid_llm:
+            self._navigator = HybridNavigator(
+                api_key=self.config.api_key,
+                ollama_url=self.config.ollama_url,
+                ollama_model=self.config.ollama_model
+            )
+        else:
+            self._navigator = AINavigator(api_key=self.config.api_key)
 
         test_results: list[TestResult] = []
 
@@ -136,6 +148,10 @@ class Executor:
             f"Total: {total_input + total_output} tokens (${total_cost:.4f})"
         )
         logger.info("=" * 80)
+
+        # Log hybrid LLM statistics if using hybrid mode
+        if self.config.use_hybrid_llm and isinstance(self._navigator, HybridNavigator):
+            self._navigator.log_statistics()
 
         # Build summary
         passed = sum(1 for r in test_results if r.passed)

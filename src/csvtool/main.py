@@ -58,6 +58,21 @@ def cli():
     envvar="ANTHROPIC_API_KEY",
     help="Anthropic API key (or set ANTHROPIC_API_KEY env var)"
 )
+@click.option(
+    "--hybrid-llm/--claude-only",
+    default=True,
+    help="Use hybrid mode (local LLM + Claude fallback) or Claude only"
+)
+@click.option(
+    "--ollama-url",
+    default="http://localhost:11434",
+    help="Ollama server URL for local LLM"
+)
+@click.option(
+    "--ollama-model",
+    default="llava:13b",
+    help="Ollama model to use (e.g., llava:13b, minicpm-v:8b)"
+)
 def run(
     url: str,
     workbook: Path,
@@ -65,7 +80,10 @@ def run(
     cache_dir: Path,
     headless: bool,
     stop_on_failure: bool,
-    api_key: Optional[str]
+    api_key: Optional[str],
+    hybrid_llm: bool,
+    ollama_url: str,
+    ollama_model: str
 ):
     """Run CSV test scenarios against an application."""
     click.echo(f"CSV Automation Tool v{__version__}")
@@ -81,7 +99,10 @@ def run(
         cache_dir=cache_dir,
         headless=headless,
         stop_on_failure=stop_on_failure,
-        api_key=api_key
+        api_key=api_key,
+        use_hybrid_llm=hybrid_llm,
+        ollama_url=ollama_url,
+        ollama_model=ollama_model
     )
 
     # Run executor
