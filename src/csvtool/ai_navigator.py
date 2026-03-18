@@ -1,12 +1,17 @@
 """AI-powered navigation using Claude API."""
 
 import json
+import logging
 import os
 from enum import Enum
 from typing import Optional
 
 import anthropic
 from pydantic import BaseModel, Field
+
+# Set up logging for LLM API calls
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
 class ActionType(str, Enum):
@@ -41,6 +46,26 @@ class AINavigator:
         if not self.api_key:
             raise ValueError("ANTHROPIC_API_KEY must be provided or set in environment")
         self.client = anthropic.Anthropic(api_key=self.api_key)
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
+        self.api_call_count = 0
+
+    def _log_api_call(self, method: str, response) -> None:
+        """Log API call details for cost estimation."""
+        input_tokens = response.usage.input_tokens
+        output_tokens = response.usage.output_tokens
+        self.total_input_tokens += input_tokens
+        self.total_output_tokens += output_tokens
+        self.api_call_count += 1
+
+        logger.info(
+            f"🤖 LLM API Call #{self.api_call_count} - {method}() | "
+            f"Model: {self.MODEL} | "
+            f"Input: {input_tokens} tokens | "
+            f"Output: {output_tokens} tokens | "
+            f"Total: {input_tokens + output_tokens} tokens | "
+            f"Session total: {self.total_input_tokens + self.total_output_tokens} tokens"
+        )
 
     async def analyze(
         self,
@@ -90,6 +115,7 @@ Return ONLY valid JSON, no markdown or explanation."""
             system=system_prompt,
             messages=[{"role": "user", "content": user_content}]
         )
+        self._log_api_call("analyze", response)
 
         response_text = response.content[0].text.strip()
 
@@ -159,6 +185,7 @@ Return ONLY valid JSON, no markdown or explanation."""
             system=system_prompt,
             messages=[{"role": "user", "content": user_content}]
         )
+        self._log_api_call("verify_result", response)
 
         response_text = response.content[0].text.strip()
 
@@ -227,6 +254,7 @@ Return ONLY valid JSON, no markdown or explanation."""
             system=system_prompt,
             messages=[{"role": "user", "content": user_content}]
         )
+        self._log_api_call("generate_test_data", response)
 
         response_text = response.content[0].text.strip()
 
@@ -287,6 +315,7 @@ Return ONLY valid JSON, no markdown or explanation."""
             system=system_prompt,
             messages=[{"role": "user", "content": user_content}]
         )
+        self._log_api_call("identify_login_form", response)
 
         response_text = response.content[0].text.strip()
 

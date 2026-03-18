@@ -1,11 +1,14 @@
 """Test execution orchestrator."""
 
 import asyncio
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 from csvtool.ai_navigator import AINavigator, ActionType
 from csvtool.browser import Browser, BrowserConfig
@@ -72,9 +75,20 @@ class Executor:
             self._browser = browser
 
             for scenario in self._workbook_data.scenarios:
+                # Reset token counters for per-scenario cost tracking
+                tokens_before_input = self._navigator.total_input_tokens
+                tokens_before_output = self._navigator.total_output_tokens
+
                 try:
                     result = await self._execute_scenario(scenario)
                     test_results.append(result)
+
+                    # Calculate cost for this scenario
+                    self._log_scenario_cost(
+                        scenario.test_id,
+                        self._navigator.total_input_tokens - tokens_before_input,
+                        self._navigator.total_output_tokens - tokens_before_output
+                    )
 
                     if not result.passed and self.config.stop_on_failure:
                         break
@@ -93,11 +107,35 @@ class Executor:
                     )
                     test_results.append(result)
 
+                    # Log cost even for failed scenarios
+                    self._log_scenario_cost(
+                        scenario.test_id,
+                        self._navigator.total_input_tokens - tokens_before_input,
+                        self._navigator.total_output_tokens - tokens_before_output
+                    )
+
                     if self.config.stop_on_failure:
                         break
 
         # Save cache after run
         self._cache.save()
+
+        # Log total cost for all scenarios
+        total_input = self._navigator.total_input_tokens
+        total_output = self._navigator.total_output_tokens
+        total_input_cost = (total_input / 1_000_000) * 3.0
+        total_output_cost = (total_output / 1_000_000) * 15.0
+        total_cost = total_input_cost + total_output_cost
+
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info(
+            f"💰 TOTAL COST ESTIMATION | "
+            f"Input: {total_input} tokens (${total_input_cost:.4f}) | "
+            f"Output: {total_output} tokens (${total_output_cost:.4f}) | "
+            f"Total: {total_input + total_output} tokens (${total_cost:.4f})"
+        )
+        logger.info("=" * 80)
 
         # Build summary
         passed = sum(1 for r in test_results if r.passed)
@@ -109,6 +147,22 @@ class Executor:
             passed_tests=passed,
             failed_tests=len(test_results) - passed,
             test_results=test_results
+        )
+
+    def _log_scenario_cost(self, test_id: str, input_tokens: int, output_tokens: int) -> None:
+        """Log cost estimation for a test scenario."""
+        # Claude Sonnet 4 pricing (as of 2025)
+        # Input: $3 per million tokens
+        # Output: $15 per million tokens
+        input_cost = (input_tokens / 1_000_000) * 3.0
+        output_cost = (output_tokens / 1_000_000) * 15.0
+        total_cost = input_cost + output_cost
+
+        logger.info(
+            f"💰 Cost Estimation - {test_id} | "
+            f"Input: {input_tokens} tokens (${input_cost:.4f}) | "
+            f"Output: {output_tokens} tokens (${output_cost:.4f}) | "
+            f"Total: {input_tokens + output_tokens} tokens (${total_cost:.4f})"
         )
 
     async def _execute_scenario(self, scenario: TestScenario) -> TestResult:

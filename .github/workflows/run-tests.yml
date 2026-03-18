@@ -15,6 +15,12 @@ on:
         options:
           - scenarios/sample-test.xlsx
 
+      timezone:
+        description: 'Timezone for system clock (e.g., UTC, America/New_York, Asia/Kolkata)'
+        required: false
+        default: 'UTC'
+        type: string
+
 env:
   PYTHON_VERSION: '3.11'
 
@@ -48,6 +54,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           DISPLAY: :99
+          TZ: ${{ inputs.timezone }}
         run: |
           # Start Xvfb virtual display
           Xvfb :99 -screen 0 1920x1080x24 &
@@ -64,8 +71,8 @@ jobs:
           background_color = #000000 80
           border_color = #ffffff 20
 
-          # Clock showing date and time
-          time1_format = %Y-%m-%d %H:%M:%S
+          # Clock showing date and time in DD/MM/YYYY HH:MM format
+          time1_format = %d/%m/%Y %H:%M
           time1_font = Ubuntu Bold 12
           clock_font_color = #ffffff 100
           clock_padding = 8 4
@@ -79,11 +86,29 @@ jobs:
           sleep 1
 
           # Run tests with browser visible on Xvfb (desktop screenshots will capture window + panel with clock)
+          # Capture exit code but don't fail workflow on test failures
+          set +e
           csvtool run \
             --url "${{ inputs.application_url }}" \
             --workbook "${{ inputs.workbook }}" \
             --output output \
             --no-headless
+          EXIT_CODE=$?
+          set -e
+
+          # Analyze results and set appropriate workflow status
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "✅ All tests passed successfully"
+          elif [ $EXIT_CODE -eq 1 ]; then
+            echo "⚠️ Some tests failed - see evidence document for details"
+            echo "::warning::Test execution completed but some tests failed. Check evidence document."
+            # Don't fail the workflow for test failures
+            exit 0
+          else
+            echo "❌ Critical error occurred (code issue or connection problem)"
+            echo "::error::Critical error during execution (exit code: $EXIT_CODE)"
+            exit $EXIT_CODE
+          fi
 
       - name: Upload Evidence
         uses: actions/upload-artifact@v4
