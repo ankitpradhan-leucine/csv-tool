@@ -40,6 +40,16 @@ class HybridNavigator:
             return response.status_code == 200
         except Exception:
             return False
+
+    @property
+    def total_input_tokens(self) -> int:
+        """Get total input tokens from Claude API (local LLM doesn't use tokens)."""
+        return self.claude_navigator.total_input_tokens
+
+    @property
+    def total_output_tokens(self) -> int:
+        """Get total output tokens from Claude API (local LLM doesn't use tokens)."""
+        return self.claude_navigator.total_output_tokens
     
     async def analyze(self, screenshot_base64: str, instruction: str, context: Optional[str] = None) -> NavigationAction:
         """Analyze screenshot - try local first, fallback to Claude."""

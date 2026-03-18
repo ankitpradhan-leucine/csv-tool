@@ -1,5 +1,6 @@
 """Word document evidence generator."""
 
+import logging
 from datetime import datetime
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.style import WD_STYLE_TYPE
 
 from csvtool.models import ExecutionSummary, TestResult, StepResult
+
+logger = logging.getLogger(__name__)
 
 
 class EvidenceGenerator:
@@ -160,20 +163,35 @@ class EvidenceGenerator:
     def _add_step_result(self, doc: Document, step_result: StepResult) -> None:
         """Add a single step result with screenshot."""
         # Just add screenshot directly - no text, no timestamp
-        if step_result.screenshot_path and step_result.screenshot_path.exists():
-            try:
-                doc.add_picture(
-                    str(step_result.screenshot_path),
-                    width=Inches(6)
-                )
-                # Center the image
-                last_paragraph = doc.paragraphs[-1]
-                last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                # Add spacing after screenshot
-                doc.add_paragraph()
-            except Exception as e:
-                # Only show error if screenshot failed
-                doc.add_paragraph(f"[Screenshot unavailable: {e}]")
+        if step_result.screenshot_path:
+            screenshot_path = step_result.screenshot_path
+            logger.info(f"📸 Processing screenshot: {screenshot_path}")
+            logger.info(f"   Absolute path: {screenshot_path.absolute()}")
+            logger.info(f"   Exists: {screenshot_path.exists()}")
+
+            if screenshot_path.exists():
+                logger.info(f"   File size: {screenshot_path.stat().st_size} bytes")
+                try:
+                    doc.add_picture(
+                        str(screenshot_path.absolute()),  # Use absolute path
+                        width=Inches(6)
+                    )
+                    # Center the image
+                    last_paragraph = doc.paragraphs[-1]
+                    last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    # Add spacing after screenshot
+                    doc.add_paragraph()
+                    logger.info(f"   ✅ Screenshot embedded successfully")
+                except Exception as e:
+                    # Only show error if screenshot failed
+                    error_msg = f"[Screenshot unavailable: {e}]"
+                    doc.add_paragraph(error_msg)
+                    logger.error(f"   ❌ Failed to embed screenshot: {e}")
+            else:
+                logger.warning(f"   ⚠️ Screenshot file not found!")
+                doc.add_paragraph(f"[Screenshot not found: {screenshot_path}]")
+        else:
+            logger.warning(f"   ⚠️ No screenshot path provided for step")
 
     def _generate_filename(self, summary: ExecutionSummary) -> str:
         """Generate filename for evidence document."""
