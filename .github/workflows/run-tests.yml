@@ -40,16 +40,45 @@ jobs:
           playwright install chromium
           playwright install-deps chromium
 
+          # Install window manager and desktop panel for CSV compliance screenshots
+          sudo apt-get update
+          sudo apt-get install -y fluxbox x11-utils xfonts-base tint2
+
       - name: Run CSV Tests
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           DISPLAY: :99
         run: |
-          # Start Xvfb for desktop screenshot support (CSV compliance)
+          # Start Xvfb virtual display
           Xvfb :99 -screen 0 1920x1080x24 &
           sleep 2
 
-          # Run with browser visible on Xvfb (not headless) so desktop screenshots work
+          # Configure tint2 panel to show clock in top-right corner
+          mkdir -p ~/.config/tint2
+          cat > ~/.config/tint2/tint2rc << 'EOF'
+          # Tint2 config for CSV test evidence - shows system date/time
+          panel_position = top right horizontal
+          panel_size = 100% 32
+          panel_background_id = 1
+
+          background_color = #000000 80
+          border_color = #ffffff 20
+
+          # Clock showing date and time
+          time1_format = %Y-%m-%d %H:%M:%S
+          time1_font = Ubuntu Bold 12
+          clock_font_color = #ffffff 100
+          clock_padding = 8 4
+          clock_background_id = 1
+          EOF
+
+          # Start window manager and panel
+          fluxbox &
+          sleep 1
+          tint2 &
+          sleep 1
+
+          # Run tests with browser visible on Xvfb (desktop screenshots will capture window + panel with clock)
           csvtool run \
             --url "${{ inputs.application_url }}" \
             --workbook "${{ inputs.workbook }}" \
