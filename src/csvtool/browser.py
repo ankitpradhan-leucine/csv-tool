@@ -90,9 +90,29 @@ class Browser:
         filename = f"{name}_{timestamp}.png"
         path = self.config.screenshot_dir / filename
 
-        # Always use browser screenshots - more reliable across all environments
-        # Desktop screenshots (mss) don't work reliably on WSL or GitHub Actions with Xvfb
-        await self.page.screenshot(path=str(path), full_page=True)
+        # Try desktop capture first (for CSV compliance - shows system date/time)
+        # This works when browser is running in non-headless mode with X display
+        use_desktop = False
+        try:
+            with mss.mss() as sct:
+                monitor = sct.monitors[1]
+                screenshot = sct.grab(monitor)
+
+                # Check if screenshot is all black (empty display)
+                # Sample a few pixels to detect if display has content
+                pixels_rgb = screenshot.rgb
+                has_content = any(pixels_rgb[i] != 0 for i in range(0, min(1000, len(pixels_rgb)), 3))
+
+                if has_content:
+                    # Display has content - use desktop screenshot
+                    mss.tools.to_png(screenshot.rgb, screenshot.size, output=str(path))
+                    use_desktop = True
+        except Exception:
+            pass
+
+        # Fall back to browser screenshot if desktop capture failed or was empty
+        if not use_desktop:
+            await self.page.screenshot(path=str(path), full_page=True)
 
         return path
 

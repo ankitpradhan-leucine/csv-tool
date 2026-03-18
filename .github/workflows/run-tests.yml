@@ -45,15 +45,16 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           DISPLAY: :99
         run: |
-          # Start Xvfb for desktop screenshot support
+          # Start Xvfb for desktop screenshot support (CSV compliance)
           Xvfb :99 -screen 0 1920x1080x24 &
           sleep 2
 
+          # Run with browser visible on Xvfb (not headless) so desktop screenshots work
           csvtool run \
             --url "${{ inputs.application_url }}" \
             --workbook "${{ inputs.workbook }}" \
             --output output \
-            --headless
+            --no-headless
 
       - name: Upload Evidence
         uses: actions/upload-artifact@v4
