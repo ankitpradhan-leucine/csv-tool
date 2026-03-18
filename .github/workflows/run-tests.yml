@@ -53,8 +53,7 @@ jobs:
             --url "${{ inputs.application_url }}" \
             --workbook "${{ inputs.workbook }}" \
             --output output \
-            --headless \
-            --continue-on-failure
+            --headless
 
       - name: Upload Evidence
         uses: actions/upload-artifact@v4
