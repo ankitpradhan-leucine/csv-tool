@@ -64,6 +64,10 @@ class Executor:
         self._current_screenshots: list[Path] = []
         self._step_results: list[StepResult] = []
 
+        # Cache statistics
+        self._cache_hits = 0
+        self._cache_misses = 0
+
     async def run(self) -> ExecutionSummary:
         """Run all test scenarios and return summary."""
         browser_config = BrowserConfig(
@@ -132,26 +136,45 @@ class Executor:
         # Save cache after run
         self._cache.save()
 
-        # Log total cost for all scenarios
+        # Log comprehensive statistics
+        total_steps = self._cache_hits + self._cache_misses
+        cache_hit_rate = (self._cache_hits / total_steps * 100) if total_steps > 0 else 0
+
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("📊 EXECUTION STATISTICS")
+        logger.info("=" * 80)
+
+        # Cache statistics
+        logger.info(f"💾 Navigation Cache:")
+        logger.info(f"  Cache Hits: {self._cache_hits} ({cache_hit_rate:.1f}%)")
+        logger.info(f"  Cache Misses: {self._cache_misses}")
+        logger.info(f"  Total Navigation Steps: {total_steps}")
+        logger.info("")
+
+        # Log hybrid LLM statistics if using hybrid mode
+        if self.config.use_hybrid_llm and isinstance(self._navigator, HybridNavigator):
+            self._navigator.log_statistics()
+            logger.info("")
+
+        # Cost estimation (only Claude API calls)
         total_input = self._navigator.total_input_tokens
         total_output = self._navigator.total_output_tokens
         total_input_cost = (total_input / 1_000_000) * 3.0
         total_output_cost = (total_output / 1_000_000) * 15.0
         total_cost = total_input_cost + total_output_cost
 
-        logger.info("")
-        logger.info("=" * 80)
+        logger.info("💰 Claude API Cost Estimation:")
         logger.info(
-            f"💰 TOTAL COST ESTIMATION | "
-            f"Input: {total_input} tokens (${total_input_cost:.4f}) | "
-            f"Output: {total_output} tokens (${total_output_cost:.4f}) | "
-            f"Total: {total_input + total_output} tokens (${total_cost:.4f})"
+            f"  Input: {total_input} tokens (${total_input_cost:.4f})"
+        )
+        logger.info(
+            f"  Output: {total_output} tokens (${total_output_cost:.4f})"
+        )
+        logger.info(
+            f"  Total: {total_input + total_output} tokens (${total_cost:.4f})"
         )
         logger.info("=" * 80)
-
-        # Log hybrid LLM statistics if using hybrid mode
-        if self.config.use_hybrid_llm and isinstance(self._navigator, HybridNavigator):
-            self._navigator.log_statistics()
 
         # Build summary
         passed = sum(1 for r in test_results if r.passed)
@@ -286,10 +309,14 @@ class Executor:
 
             if cached:
                 # Use cached selector
+                self._cache_hits += 1
+                logger.info(f"💾 CACHE HIT | Instruction: {step.instruction[:60]}... | Selector: {cached.selector} | Action: {cached.action}")
                 await self._perform_action(cached.action, cached.selector)
                 self._cache.set(step.instruction, cached.selector, cached.action)
             else:
                 # Fall back to AI
+                self._cache_misses += 1
+                logger.info(f"🔍 CACHE MISS | Instruction: {step.instruction[:60]}... | Querying LLM...")
                 screenshot_b64 = await self._browser.get_screenshot_base64()
                 action = await self._navigator.analyze(
                     screenshot_base64=screenshot_b64,

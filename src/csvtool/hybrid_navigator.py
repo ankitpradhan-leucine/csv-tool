@@ -211,26 +211,15 @@ confidence: 0.0 to 1.0 (how sure you are about this verification)
     def log_statistics(self):
         """Log usage statistics."""
         total = self.local_success_count + self.local_failure_count + self.claude_count
-        
+
         if total == 0:
             return
-        
+
         local_success_pct = (self.local_success_count / total * 100) if total > 0 else 0
         claude_pct = (self.claude_count / total * 100) if total > 0 else 0
-        
-        logger.info("")
-        logger.info("=" * 80)
-        logger.info("📊 HYBRID LLM USAGE STATISTICS")
+
+        logger.info("🤖 Hybrid LLM Breakdown:")
         logger.info(f"  Local LLM Success: {self.local_success_count} ({local_success_pct:.1f}%)")
         logger.info(f"  Local LLM Fallback: {self.local_failure_count}")
         logger.info(f"  Claude API Calls: {self.claude_count} ({claude_pct:.1f}%)")
         logger.info(f"  Total LLM Calls: {total}")
-        
-        if self.claude_count > 0:
-            # Get cost from Claude navigator
-            total_input = self.claude_navigator.total_input_tokens
-            total_output = self.claude_navigator.total_output_tokens
-            cost = (total_input / 1_000_000 * 3.0) + (total_output / 1_000_000 * 15.0)
-            logger.info(f"  Claude Cost: ${cost:.4f} ({total_input + total_output} tokens)")
-        
-        logger.info("=" * 80)
