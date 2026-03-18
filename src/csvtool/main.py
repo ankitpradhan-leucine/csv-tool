@@ -117,8 +117,15 @@ def run(
 
     # Generate evidence
     click.echo("Generating evidence document...")
-    generator = EvidenceGenerator(output)
-    doc_path = generator.generate(summary)
+    try:
+        generator = EvidenceGenerator(output)
+        doc_path = generator.generate(summary)
+        click.echo(f"✅ Evidence document created: {doc_path}")
+        click.echo(f"   File size: {doc_path.stat().st_size} bytes")
+    except Exception as e:
+        click.echo(f"❌ Failed to generate evidence document: {e}", err=True)
+        click.echo(f"   Output directory: {output.absolute()}", err=True)
+        sys.exit(1)
 
     # Print summary
     click.echo()

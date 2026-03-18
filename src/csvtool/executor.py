@@ -70,9 +70,17 @@ class Executor:
 
     async def run(self) -> ExecutionSummary:
         """Run all test scenarios and return summary."""
+        # Ensure output directories exist
+        self.config.output_dir.mkdir(parents=True, exist_ok=True)
+        screenshot_dir = self.config.output_dir / "screenshots"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"📁 Output directory: {self.config.output_dir.absolute()}")
+        logger.info(f"📸 Screenshots directory: {screenshot_dir.absolute()}")
+
         browser_config = BrowserConfig(
             headless=self.config.headless,
-            screenshot_dir=self.config.output_dir / "screenshots"
+            screenshot_dir=screenshot_dir
         )
 
         # Initialize navigator (hybrid or Claude-only)
@@ -139,11 +147,20 @@ class Executor:
         # Log comprehensive statistics
         total_steps = self._cache_hits + self._cache_misses
         cache_hit_rate = (self._cache_hits / total_steps * 100) if total_steps > 0 else 0
+        total_screenshots = len(self._current_screenshots)
+        total_screenshot_size = sum(p.stat().st_size for p in self._current_screenshots if p.exists())
 
         logger.info("")
         logger.info("=" * 80)
         logger.info("📊 EXECUTION STATISTICS")
         logger.info("=" * 80)
+
+        # Screenshot statistics
+        logger.info(f"📸 Screenshots:")
+        logger.info(f"  Total Screenshots: {total_screenshots}")
+        logger.info(f"  Total Size: {total_screenshot_size / 1024 / 1024:.2f} MB")
+        logger.info(f"  Location: {self.config.output_dir / 'screenshots'}")
+        logger.info("")
 
         # Cache statistics
         logger.info(f"💾 Navigation Cache:")
@@ -382,4 +399,5 @@ class Executor:
         """Take a screenshot and track it."""
         path = await self._browser.screenshot(name)
         self._current_screenshots.append(path)
+        logger.info(f"📸 Screenshot saved: {path.name} ({path.stat().st_size} bytes)")
         return path
