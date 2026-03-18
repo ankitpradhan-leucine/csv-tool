@@ -21,6 +21,12 @@ on:
         default: 'UTC'
         type: string
 
+      use_local_llm:
+        description: 'Use local LLM (Ollama) with Claude fallback (hybrid mode)'
+        required: false
+        default: true
+        type: boolean
+
 env:
   PYTHON_VERSION: '3.11'
 
@@ -49,6 +55,22 @@ jobs:
           # Install window manager and desktop panel for CSV compliance screenshots
           sudo apt-get update
           sudo apt-get install -y fluxbox x11-utils xfonts-base tint2
+
+      - name: Install Ollama and Local LLM
+        if: ${{ inputs.use_local_llm }}
+        run: |
+          # Install Ollama
+          curl -fsSL https://ollama.com/install.sh | sh
+
+          # Start Ollama service in background
+          ollama serve &
+          sleep 5
+
+          # Pull a lightweight vision model for CI (minicpm-v:8b is ~4.7GB, faster than llava:13b)
+          ollama pull minicpm-v:8b
+
+          # Verify Ollama is running
+          curl -s http://localhost:11434/api/tags || echo "Warning: Ollama not responding"
 
       - name: Run CSV Tests
         env:
@@ -86,13 +108,26 @@ jobs:
           sleep 1
 
           # Run tests with browser visible on Xvfb (desktop screenshots will capture window + panel with clock)
+          # Uses hybrid LLM mode (local Ollama + Claude fallback) by default
           # Capture exit code but don't fail workflow on test failures
           set +e
-          csvtool run \
-            --url "${{ inputs.application_url }}" \
-            --workbook "${{ inputs.workbook }}" \
-            --output output \
-            --no-headless
+          if [ "${{ inputs.use_local_llm }}" = "true" ]; then
+            echo "🚀 Running with HYBRID mode (Local LLM + Claude fallback)"
+            csvtool run \
+              --url "${{ inputs.application_url }}" \
+              --workbook "${{ inputs.workbook }}" \
+              --output output \
+              --no-headless \
+              --ollama-model minicpm-v:8b
+          else
+            echo "☁️ Running with CLAUDE ONLY mode"
+            csvtool run \
+              --url "${{ inputs.application_url }}" \
+              --workbook "${{ inputs.workbook }}" \
+              --output output \
+              --no-headless \
+              --claude-only
+          fi
           EXIT_CODE=$?
           set -e
 
