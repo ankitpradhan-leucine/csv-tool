@@ -120,6 +120,7 @@ jobs:
 
           # Capture exit code but don't fail workflow on test failures
           set +e
+          set -o pipefail  # Capture exit code from first command in pipeline, not tee
           if [ "${{ inputs.use_local_llm }}" = "true" ]; then
             echo "🚀 Running with HYBRID mode (Local LLM + Claude fallback)"
             csvtool run \
@@ -128,6 +129,7 @@ jobs:
               --output output \
               --no-headless \
               --ollama-model minicpm-v:8b 2>&1 | tee csvtool-output.log
+            EXIT_CODE=${PIPESTATUS[0]}
           else
             echo "☁️ Running with CLAUDE ONLY mode"
             csvtool run \
@@ -136,8 +138,8 @@ jobs:
               --output output \
               --no-headless \
               --claude-only 2>&1 | tee csvtool-output.log
+            EXIT_CODE=${PIPESTATUS[0]}
           fi
-          EXIT_CODE=$?
           set -e
 
           echo "csvtool exit code: $EXIT_CODE"
