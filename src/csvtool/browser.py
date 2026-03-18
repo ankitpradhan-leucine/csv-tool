@@ -90,18 +90,9 @@ class Browser:
         filename = f"{name}_{timestamp}.png"
         path = self.config.screenshot_dir / filename
 
-        # Try desktop capture first (for CSV compliance - shows system date/time)
-        # Fall back to browser screenshot if desktop capture fails (e.g., in WSL)
-        try:
-            with mss.mss() as sct:
-                # Capture the primary monitor
-                monitor = sct.monitors[1]  # 0 is all monitors, 1 is primary
-                screenshot = sct.grab(monitor)
-                # Save to file
-                mss.tools.to_png(screenshot.rgb, screenshot.size, output=str(path))
-        except Exception:
-            # Fall back to browser screenshot if desktop capture fails
-            await self.page.screenshot(path=str(path), full_page=True)
+        # Always use browser screenshots - more reliable across all environments
+        # Desktop screenshots (mss) don't work reliably on WSL or GitHub Actions with Xvfb
+        await self.page.screenshot(path=str(path), full_page=True)
 
         return path
 
