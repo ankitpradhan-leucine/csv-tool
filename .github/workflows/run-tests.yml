@@ -109,6 +109,15 @@ jobs:
 
           # Run tests with browser visible on Xvfb (desktop screenshots will capture window + panel with clock)
           # Uses hybrid LLM mode (local Ollama + Claude fallback) by default
+
+          # Check if csvtool is installed
+          which csvtool
+          csvtool --version || echo "csvtool version check failed"
+
+          # Verify working directory and scenario file
+          pwd
+          ls -la scenarios/
+
           # Capture exit code but don't fail workflow on test failures
           set +e
           if [ "${{ inputs.use_local_llm }}" = "true" ]; then
@@ -118,7 +127,7 @@ jobs:
               --workbook "${{ inputs.workbook }}" \
               --output output \
               --no-headless \
-              --ollama-model minicpm-v:8b
+              --ollama-model minicpm-v:8b 2>&1 | tee csvtool-output.log
           else
             echo "☁️ Running with CLAUDE ONLY mode"
             csvtool run \
@@ -126,10 +135,12 @@ jobs:
               --workbook "${{ inputs.workbook }}" \
               --output output \
               --no-headless \
-              --claude-only
+              --claude-only 2>&1 | tee csvtool-output.log
           fi
           EXIT_CODE=$?
           set -e
+
+          echo "csvtool exit code: $EXIT_CODE"
 
           # Analyze results and set appropriate workflow status
           if [ $EXIT_CODE -eq 0 ]; then
@@ -145,18 +156,56 @@ jobs:
             exit $EXIT_CODE
           fi
 
+      - name: Check Output Files
+        if: always()
+        run: |
+          echo "Checking for output files..."
+          ls -la
+          if [ -d "output" ]; then
+            echo "✅ Output directory exists"
+            ls -la output/
+            if [ -d "output/screenshots" ]; then
+              echo "✅ Screenshots directory exists"
+              ls -la output/screenshots/ | head -20
+            else
+              echo "❌ Screenshots directory not found"
+            fi
+            if ls output/*.docx 1> /dev/null 2>&1; then
+              echo "✅ Evidence documents found:"
+              ls -lh output/*.docx
+            else
+              echo "❌ No evidence documents found"
+            fi
+          else
+            echo "❌ Output directory not found"
+          fi
+
       - name: Upload Evidence
         uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true
         with:
           name: csv-evidence-${{ github.run_number }}
           path: output/*.docx
           retention-days: 90
+          if-no-files-found: warn
 
       - name: Upload Screenshots
         uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true
         with:
           name: csv-screenshots-${{ github.run_number }}
           path: output/screenshots/
           retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload Execution Log
+        uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: csvtool-log-${{ github.run_number }}
+          path: csvtool-output.log
+          retention-days: 7
+          if-no-files-found: warn
